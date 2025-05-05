@@ -1,0 +1,34 @@
+const notificationRoutes = require("./routes/notificationRoutes");
+require("dotenv").config();
+const express = require("express");
+const connectDB = require("./config/db");
+const authRoutes = require("./routes/authRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
+const requestRoutes = require("./routes/requestRoutes");
+const { populateUserMaps } = require("./utils/userMaps");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(express.json());
+
+// Connect to DB
+connectDB();
+
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/requests", requestRoutes);
+app.use("/api", paymentRoutes);
+
+// Start Server
+app.listen(PORT, async () => {
+  try {
+    await populateUserMaps();
+    console.log("✅ Server running on http://localhost:" + PORT);
+    console.log("✅ User maps initialized.");
+  } catch (err) {
+    console.error("❌ Failed to initialize user maps:", err.message);
+  }
+});

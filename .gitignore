@@ -1,0 +1,36 @@
+# Node.js modules
+/node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+jspm_packages/
+
+# Build output
+/dist/
+/build/
+
+# Environment files
+.env
+
+# IDE files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Optional: coverage reports (if you're running tests)
+coverage/
+
+# Optional: dotenv example file (if you use .env.example to share variables)
+.env.example
+
+# Optional: add other temporary files or folders here
+UpdateBalance.js
