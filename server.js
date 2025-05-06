@@ -6,9 +6,19 @@ const authRoutes = require("./routes/authRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const requestRoutes = require("./routes/requestRoutes");
 const { populateUserMaps } = require("./utils/userMaps");
-
+const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+
+// If you want to allow credentials (cookies, headers), use:
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
 
 // Middleware
 app.use(express.json());
