@@ -54,27 +54,40 @@ exports.createRequest = async (req, res) => {
         });
       }
   
-      const newRequest = new PaymentRequest({
-        requester: req.user.id,
-        recipient: recipientId,
+      // Create a transaction for the payment request
+      const transaction = new Transaction({
+        userId: recipientId,
+        type: "payment_request",
         amount,
         note,
-        status: "pending",
+        sender: req.user.username,
+        receiver: recipient,
+        date: new Date(),
       });
   
-      await newRequest.save();
+      await transaction.save();
   
-      await new Notification({
+      // Create a notification for the recipient
+      const notification = new Notification({
         userId: recipientId,
-        message: `You have received a payment request of ₹${amount} from ${req.user.username}${(note) ? ` with note: "${note}"` : ""}`,
-        type: "request_sent",
-      }).save();
+        message: `You have a new payment request of ₹${amount} from ${req.user.username}.`,
+        transactionId: transaction._id, // Include the transaction ID
+        date: new Date(),
+        read: false,
+      });
+  
+      await notification.save();
       
 
       res.status(201).json({
         status: "success",
         message: `Payment request of ₹${amount} sent to '${recipient}'.`,
-        data: newRequest,
+        data: {
+          transactionId: transaction._id,
+          amount,
+          note,
+          recipient,
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
