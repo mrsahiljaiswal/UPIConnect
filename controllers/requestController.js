@@ -1,6 +1,6 @@
 const PaymentRequest = require("../models/Request");
 const Transaction = require("../models/Transaction");
-
+const mongoose = require("mongoose");
 
 const {
     getUsernameFromId,
@@ -55,8 +55,8 @@ exports.createRequest = async (req, res) => {
       }
   
       const newRequest = new PaymentRequest({
-        requester: req.user.id,
-        recipient: recipientId,
+        requester: req.user.id, // Authenticated user
+        recipient: recipientId, // Mapped recipient ID
         amount,
         note,
         status: "pending",
@@ -92,16 +92,28 @@ exports.createRequest = async (req, res) => {
 
 // 2. Accept a payment request and convert it to a transaction
 exports.acceptRequest = async (req, res) => {
-    try {
-      const request = await PaymentRequest.findById(req.params.id);
-  
-      if (!request || request.recipient.toString() !== req.user.id.toString()) {
-        return res.status(404).json({
-          status: "fail",
-          message: "Payment request not found or unauthorized.",
-          timestamp: new Date().toISOString(),
-        });
-      }
+  try {
+    console.log("Request ID:", req.params.id);
+    console.log("Authenticated User:", req.user);
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Invalid PaymentRequest ID.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const request = await PaymentRequest.findById(req.params.id);
+    console.log("Payment Request Found:", request);
+
+    if (!request || request.recipient.toString() !== req.user.id.toString()) {
+      return res.status(404).json({
+        status: "fail",
+        message: `Payment request not found or unauthorized. Only the recipient (${request.recipient}) can accept this request.`,
+        timestamp: new Date().toISOString(),
+      });
+    }
   
       // 🛑 Prevent self-request acceptance
       if (request.requester.toString() === req.user.id.toString()) {
@@ -112,7 +124,7 @@ exports.acceptRequest = async (req, res) => {
         });
       }
   
-      if (request.status !== "pending") {
+      if request.status !== "pending") {
         return res.status(400).json({
           status: "fail",
           message: `Request already ${request.status}.`,
