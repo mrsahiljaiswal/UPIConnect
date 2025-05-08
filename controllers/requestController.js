@@ -14,54 +14,29 @@ const Notification = require('../models/Notification')
 // 1. Create a new payment request
 exports.createRequest = async (req, res) => {
     try {
-      const { amount, note, recipient } = req.body;
+      const { amount, note, payee } = req.body;
   
-      if (!amount || amount <= 0 || !recipient) {
-        return res.status(400).json({
-          status: "fail",
-          message: "Amount and recipient are required and must be valid.",
-          timestamp: new Date().toISOString(),
-        });
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ status: "fail", message: "Invalid amount." });
       }
   
-      // Map username to MongoDB ObjectId
-      const recipientId = await getIdFromUsername(recipient);
-      
-  
-      // Self-request prevention by username
-      if (recipient.trim().toLowerCase() === req.user.username.trim().toLowerCase()) {
-        return res.status(400).json({
-          status: "fail",
-          message: "You cannot send a payment request to yourself.",
-          timestamp: new Date().toISOString(),
-        });
+      const payeeId = getIdFromUsername(payee);
+      if (!payeeId) {
+        return res.status(404).json({ status: "fail", message: `User '${payee}' not found.` });
       }
   
-      // Self-request prevention by user ID
-      if (recipientId?.toString() === req.user.id.toString()) {
-        return res.status(400).json({
-          status: "fail",
-          message: "You cannot send a payment request to yourself (by ID).",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      if (!recipientId) {
-        return res.status(404).json({
-          status: "fail",
-          message: "Recipient user not found.",
-          timestamp: new Date().toISOString(),
-        });
+      if (payeeId === req.user.id) {
+        return res.status(400).json({ status: "fail", message: "Cannot request payment from yourself." });
       }
   
       // Create a transaction for the payment request
       const transaction = new Transaction({
-        userId: recipientId,
+        userId: payeeId,
         type: "payment_request",
         amount,
         note,
         sender: req.user.username,
-        receiver: recipient,
+        receiver: payee,
         date: new Date(),
       });
   
@@ -69,35 +44,29 @@ exports.createRequest = async (req, res) => {
   
       // Create a notification for the recipient
       const notification = new Notification({
-        userId: recipientId,
+        userId: payeeId,
         message: `You have a new payment request of ₹${amount} from ${req.user.username}.`,
-        transactionId: transaction._id, // Include the transaction ID
+        type: "request_sent",
+        transactionId: transaction._id,
         date: new Date(),
         read: false,
       });
   
       await notification.save();
-      
-
+  
       res.status(201).json({
         status: "success",
-        message: `Payment request of ₹${amount} sent to '${recipient}'.`,
+        message: "Payment request created successfully.",
         data: {
           transactionId: transaction._id,
           amount,
           note,
-          recipient,
+          payee,
         },
-        timestamp: new Date().toISOString(),
       });
     } catch (err) {
-      console.error("[ERROR in createRequest]", err);
-      res.status(500).json({
-        status: "error",
-        message: "Failed to create payment request.",
-        error: err.message,
-        timestamp: new Date().toISOString(),
-      });
+      console.error(err); // Log the error for debugging
+      res.status(500).json({ status: "error", message: "Failed to create payment request.", error: err.message });
     }
   };
   
