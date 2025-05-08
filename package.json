@@ -1,15 +1,14 @@
 {
-  "name": "upi-connect",
+  "name": "upi-api",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon server.js ",
-    "start": "node server.js"
+    "dev": "nodemon server.js "
   },
   "keywords": [],
-  "author": "Sahil Jaiswal",
+  "author": "",
   "license": "ISC",
-  "description": "https://www.linkedin.com/in/mrsahiljaiswal/",
+  "description": "",
   "dependencies": {
     "bcrypt": "^5.1.1",
     "body-parser": "^2.2.0",
