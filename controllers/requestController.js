@@ -13,80 +13,78 @@ const User = require('../models/User')
 const Notification = require('../models/Notification')
 // 1. Create a new payment request
 exports.createRequest = async (req, res) => {
-    try {
-      const { amount, note, recipient } = req.body;
-  
-      if (!amount || amount <= 0 || !recipient) {
-        return res.status(400).json({
-          status: "fail",
-          message: "Amount and recipient are required and must be valid.",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      // Map username to MongoDB ObjectId
-      const recipientId = await getIdFromUsername(recipient);
-      
-  
-      // Self-request prevention by username
-      if (recipient.trim().toLowerCase() === req.user.username.trim().toLowerCase()) {
-        return res.status(400).json({
-          status: "fail",
-          message: "You cannot send a payment request to yourself.",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      // Self-request prevention by user ID
-      if (recipientId?.toString() === req.user.id.toString()) {
-        return res.status(400).json({
-          status: "fail",
-          message: "You cannot send a payment request to yourself (by ID).",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      if (!recipientId) {
-        return res.status(404).json({
-          status: "fail",
-          message: "Recipient user not found.",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      const newRequest = new PaymentRequest({
-        requester: req.user.id,
-        recipient: recipientId,
-        amount,
-        note,
-        status: "pending",
-      });
-  
-      await newRequest.save();
-  
-      await new Notification({
-        userId: recipientId,
-        message: `You have received a payment request of ₹${amount} from ${req.user.username}${(note) ? ` with note: "${note}"` : ""}`,
-        type: "request_sent",
-      }).save();
-      
+  try {
+    const { amount, note, recipient } = req.body;
 
-      res.status(201).json({
-        status: "success",
-        message: `Payment request of ₹${amount} sent to '${recipient}'.`,
-        data: newRequest,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error("[ERROR in createRequest]", err);
-      res.status(500).json({
-        status: "error",
-        message: "Failed to create payment request.",
-        error: err.message,
+    if (!amount || amount <= 0 || !recipient) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Amount and recipient are required and must be valid.",
         timestamp: new Date().toISOString(),
       });
     }
-  };
+
+    // Map username to MongoDB ObjectId
+    const recipientId = await getIdFromUsername(recipient);
+
+    if (!recipientId) {
+      return res.status(404).json({
+        status: "fail",
+        message: "Recipient user not found.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Prevent self-request
+    if (recipientId.toString() === req.user.id.toString()) {
+      return res.status(400).json({
+        status: "fail",
+        message: "You cannot send a payment request to yourself.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Create a new payment request
+    const newRequest = new PaymentRequest({
+      requester: req.user.id,
+      recipient: recipientId,
+      amount,
+      note,
+      status: "pending",
+    });
+
+    await newRequest.save();
+
+    // Create a notification for the recipient with the transaction ID
+    await new Notification({
+      userId: recipientId,
+      message: `You have received a payment request of ₹${amount} from ${req.user.username}${note ? ` with note: "${note}"` : ""}.`,
+      type: "request_sent",
+      transactionId: newRequest._id, // Include the transaction ID
+    }).save();
+
+    // Respond with success
+    res.status(201).json({
+      status: "success",
+      message: `Payment request of ₹${amount} sent to '${recipient}'.`,
+      data: {
+        transactionId: newRequest._id, // Include the transaction ID in the response
+        amount,
+        note,
+        recipient,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to create payment request.",
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+};
   
   
 
