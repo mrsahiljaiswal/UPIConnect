@@ -1,7 +1,3 @@
-const PaymentRequest = require("../models/Request");
-const Transaction = require("../models/Transaction");
-
-
 const {
     getUsernameFromId,
     getIdFromUsername,
@@ -9,8 +5,11 @@ const {
     updateUserMap
   } = require("../utils/userMaps");
    // Import the mapping util
-const User = require('../models/User')
-const Notification = require('../models/Notification')
+const User = require("../models/User");
+const PaymentRequest = require("../models/Request");
+const Notification = require("../models/Notification");
+const Transaction = require("../models/Transaction");
+
 // 1. Create a new payment request
 exports.createRequest = async (req, res) => {
   try {
@@ -55,13 +54,15 @@ exports.createRequest = async (req, res) => {
 
     await newRequest.save();
 
-    // Create a notification for the recipient with the transaction ID
-    await new Notification({
-      userId: recipientId,
+    // Add a notification for the recipient
+    const recipientUser = await User.findById(recipientId);
+    recipientUser.notifications.push({
       message: `You have received a payment request of ₹${amount} from ${req.user.username}${note ? ` with note: "${note}"` : ""}.`,
       type: "request_sent",
       transactionId: newRequest._id, // Include the transaction ID
-    }).save();
+      seen: false,
+    });
+    await recipientUser.save();
 
     // Respond with success
     res.status(201).json({
@@ -90,110 +91,10 @@ exports.createRequest = async (req, res) => {
 
 // 2. Accept a payment request and convert it to a transaction
 exports.acceptRequest = async (req, res) => {
-    try {
-      const request = await PaymentRequest.findById(req.params.id);
-  
-      if (!request || request.recipient.toString() !== req.user.id.toString()) {
-        return res.status(404).json({
-          status: "fail",
-          message: "Payment request not found or unauthorized.",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      // 🛑 Prevent self-request acceptance
-      if (request.requester.toString() === req.user.id.toString()) {
-        return res.status(400).json({
-          status: "fail",
-          message: "You cannot accept your own payment request.",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      if (request.status !== "pending") {
-        return res.status(400).json({
-          status: "fail",
-          message: `Request already ${request.status}.`,
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      // 🔍 Get requester's username
-      const requesterUser = await User.findById(request.requester);
-      if (!requesterUser) {
-        return res.status(404).json({
-          status: "fail",
-          message: "Requester user not found.",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      // Debit transaction: current user (recipient) pays
-      const debitTxn = new Transaction({
-        userId: req.user.id,
-        type: "debit",
-        amount: request.amount,
-        note: request.note,
-        sender: req.user.username,
-        receiver: requesterUser.username,  // ✅ Save username, not ObjectId
-        date: new Date(),
-      });
-  
-      // Credit transaction: requester receives money
-      const creditTxn = new Transaction({
-        userId: request.requester,
-        type: "credit",
-        amount: request.amount,
-        note: `Received from ${req.user.username}`,
-        sender: req.user.username,
-        receiver: requesterUser.username,  // ✅ Save username, not ObjectId
-        date: new Date(),
-      });
-  
-      await debitTxn.save();
-      await creditTxn.save();
-  
-      request.status = "accepted";
-      await request.save();
-      
-      await new Notification({
-        userId: request.requester,  // Notify the person who made the request
-        message: `${req.user.username} accepted your payment request of ₹${request.amount}`,
-        type: "request_accepted",
-      }).save();
-    
-    
-
-      res.status(200).json({
-        status: "success",
-        message: "Payment request accepted and transaction created.",
-        data: {
-          request,
-          transactionId: debitTxn._id,
-        },
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error("[ERROR in acceptRequest]", err);
-      res.status(500).json({
-        status: "error",
-        message: "Failed to accept request.",
-        error: err.message,
-        timestamp: new Date().toISOString(),
-      });
-    }
-  };
-  
-  
-
-// 3. Reject a payment request
-exports.rejectRequest = async (req, res) => {
   try {
     const request = await PaymentRequest.findById(req.params.id);
 
-    
-    if (!request || request.recipient.toString() !== req.user.id.toString())
-        {console.log(request)
+    if (!request || request.recipient.toString() !== req.user.id.toString()) {
       return res.status(404).json({
         status: "fail",
         message: "Payment request not found or unauthorized.",
@@ -209,8 +110,137 @@ exports.rejectRequest = async (req, res) => {
       });
     }
 
+    const requesterUser = await User.findById(request.requester);
+    const recipientUser = await User.findById(req.user.id);
+
+    // Check if the recipient has enough balance
+    if (recipientUser.balance < request.amount) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Insufficient balance to accept the payment request.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Update balances
+    recipientUser.balance -= request.amount; // Debit from recipient
+    requesterUser.balance += request.amount; // Credit to requester
+
+    await recipientUser.save();
+    await requesterUser.save();
+
+    // Update request status
+    request.status = "accepted";
+    await request.save();
+
+    // Add notification for requester
+    requesterUser.notifications.push({
+      message: `${recipientUser.username} accepted your payment request of ₹${request.amount}.`,
+      type: "request_accepted",
+      transactionId: request._id,
+      seen: false,
+    });
+    await requesterUser.save();
+
+    // Add debit transaction for recipient
+    const debitTransaction = new Transaction({
+      userId: recipientUser._id,
+      sender: recipientUser.username,
+      receiver: requesterUser.username,
+      amount: request.amount,
+      type: "debited",
+      status: "completed",
+      note: request.note,
+      date: new Date(),
+    });
+    await debitTransaction.save();
+
+    // Add credit transaction for requester
+    const creditTransaction = new Transaction({
+      userId: requesterUser._id,
+      sender: recipientUser.username,
+      receiver: requesterUser.username,
+      amount: request.amount,
+      type: "credited",
+      status: "completed",
+      note: request.note,
+      date: new Date(),
+    });
+    await creditTransaction.save();
+
+    res.status(200).json({
+      status: "success",
+      message: "Payment request accepted.",
+      data: {
+        request,
+        transactions: {
+          debitTransaction,
+          creditTransaction,
+        },
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: "Failed to accept request.",
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+};
+  
+  
+
+// 3. Reject a payment request
+exports.rejectRequest = async (req, res) => {
+  try {
+    const request = await PaymentRequest.findById(req.params.id);
+
+    if (!request || request.recipient.toString() !== req.user.id.toString()) {
+      return res.status(404).json({
+        status: "fail",
+        message: "Payment request not found or unauthorized.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    if (request.status !== "pending") {
+      return res.status(400).json({
+        status: "fail",
+        message: `Request already ${request.status}.`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const requesterUser = await User.findById(request.requester);
+    const recipientUser = await User.findById(req.user.id);
+
+    // Update request status
     request.status = "rejected";
     await request.save();
+
+    // Add notification for requester
+    requesterUser.notifications.push({
+      message: `${recipientUser.username} rejected your payment request of ₹${request.amount}.`,
+      type: "request_rejected",
+      transactionId: request._id,
+      seen: false,
+    });
+    await requesterUser.save();
+
+    // Add transaction for rejection
+    const transaction = new Transaction({
+      userId: req.user.id, // Add userId for the recipient
+      sender: requesterUser.username,
+      receiver: recipientUser.username,
+      amount: request.amount,
+      type: "rejected", // Ensure this matches the enum in the model
+      status: "rejected",
+      note: request.note,
+      date: new Date(),
+    });
+    await transaction.save();
 
     res.status(200).json({
       status: "success",
@@ -231,22 +261,38 @@ exports.rejectRequest = async (req, res) => {
 // 4. Get all payment requests sent/received by current user
 exports.getMyRequests = async (req, res) => {
   try {
-    const requests = await PaymentRequest.find({
-      $or: [{ requester: req.user.id }, { recipient: req.user.id }],
-    }).sort({ createdAt: -1 });
+    // Fetch only pending payment requests where the user is the recipient
+    const pendingRequests = await PaymentRequest.find({
+      recipient: req.user.id,
+      status: "pending",
+    })
+      .sort({ createdAt: -1 })
+      .select("_id requester recipient amount note status createdAt");
+
+    // Count pending requests dynamically
+    const pendingRequestsCount = pendingRequests.length;
 
     res.status(200).json({
       status: "success",
-      message: "Requests fetched successfully.",
-      data: requests,
-      timestamp: new Date().toISOString(),
+      message: "Pending payment requests fetched successfully.",
+      data: {
+        pendingRequests: pendingRequests.map((request) => ({
+          transactionId: request._id, // Include transaction ID
+          requester: request.requester,
+          recipient: request.recipient,
+          amount: request.amount,
+          note: request.note,
+          status: request.status,
+          createdAt: request.createdAt,
+        })),
+        pendingRequestsCount, // Count of pending requests
+      },
     });
   } catch (err) {
     res.status(500).json({
       status: "error",
-      message: "Failed to fetch requests.",
+      message: "Failed to fetch pending payment requests.",
       error: err.message,
-      timestamp: new Date().toISOString(),
     });
   }
 };
