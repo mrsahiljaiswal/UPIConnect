@@ -5,6 +5,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const requestRoutes = require("./routes/requestRoutes");
+const expenseRoutes = require("./routes/expenseRoutes");
 const { populateUserMaps } = require("./utils/userMaps");
 const cors = require('cors');
 const app = express();
@@ -31,6 +32,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api", paymentRoutes);
+app.use("/api/expenses", expenseRoutes);
 
 // Start Server
 app.listen(PORT, async () => {
