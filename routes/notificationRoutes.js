@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const notificationController = require("../controllers/notificationController");
-const checkBlacklist = require("../middleware/checkBlacklist");
-const authMiddleware = require("../middleware/authMiddleware");
+const { markAsRead, dismissNotification, getNotifications } = require("../controllers/notificationController");
+const authenticate = require("../middleware/authMiddleware");
 
-router.get("/", checkBlacklist, authMiddleware, notificationController.getNotifications);
-router.put("/seen", checkBlacklist, authMiddleware, notificationController.markAllAsSeen);
+router.get("/", authenticate, getNotifications); // Fetch notifications
+router.patch("/mark-as-read/:id", authenticate, markAsRead);
+router.delete("/dismiss/:id", authenticate, dismissNotification);
 
 module.exports = router;
