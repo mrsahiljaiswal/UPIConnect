@@ -6,21 +6,6 @@ const transactionSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
-  type: {
-    type: String,
-    enum: ["debit", "credit"],
-    required: true,
-  },
-  amount: {
-    type: Number,
-    required: true,
-  },
-  note: {
-    type: String,
-  },
-  payee: {
-    type: String,
-  },
   sender: {
     type: String,
     required: true,
@@ -29,12 +14,27 @@ const transactionSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  amount: {
+    type: Number,
+    required: true,
+  },
+  type: {
+    type: String,
+    enum: ["credited", "debited", "rejected"],
+    required: true,
+  },
+  status: {
+    type: String,
+    enum: ["completed", "rejected"],
+    required: true,
+  },
+  note: {
+    type: String,
+  },
   date: {
     type: Date,
     default: Date.now,
   },
 });
 
-const Transaction = mongoose.model("Transaction", transactionSchema);
-
-module.exports = Transaction;
+module.exports = mongoose.model("Transaction", transactionSchema);
