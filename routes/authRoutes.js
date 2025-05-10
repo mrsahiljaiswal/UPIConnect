@@ -26,37 +26,34 @@ router.get("/protected", authenticate, checkBlacklist, (req, res) => {
 
 // Get current logged-in user
 router.get("/current-user", authenticate, checkBlacklist, async (req, res) => {
-    try {
-      const user = await User.findById(req.user.id).select("username email");
-      if (!user) {
-        return res.status(404).json({
-          status: "fail",
-          message: "User not found.",
-          timestamp: new Date().toISOString(),
-        });
-      }
-  
-      const { finalBalance } = await calculateBalance(req.user.id);
-  
-      res.status(200).json({
-        status: "success",
-        message: "Current user details fetched successfully.",
-        data: {
-          userId: req.user.id,
-          username: user.username,
-          email: user.email,
-          balance: finalBalance,
-        },
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err) {
-      res.status(500).json({
-        status: "error",
-        message: "Failed to fetch current user details.",
-        error: err.message,
+  try {
+        const user = await User.findById(req.user.id).select("username email finalBalance");
+    if (!user) {
+      return res.status(404).json({
+        status: "fail",
+        message: "User not found.",
         timestamp: new Date().toISOString(),
       });
     }
-  });
+
+    res.status(200).json({
+      status: "success",
+      message: "Current user fetched successfully.",
+      data: {
+        username: user.username,
+        email: user.email,
+        finalBalance: user.finalBalance, // Include the balance here
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: "Failed to fetch current user.",
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
 
 module.exports = router;
