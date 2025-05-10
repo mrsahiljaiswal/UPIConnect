@@ -1,14 +1,13 @@
 const {
-    getUsernameFromId,
-    getIdFromUsername,
-    populateUserMaps,
-    updateUserMap
-  } = require("../utils/userMaps");
-   // Import the mapping util
+  getUsernameFromId,
+  getIdFromUsername,
+  populateUserMaps,
+  updateUserMap
+} = require("../utils/userMaps");
 const User = require("../models/User");
 const PaymentRequest = require("../models/Request");
 const Notification = require("../models/Notification");
-const Transaction = require("../models/Transaction");
+const Transaction = require("../models/Transaction"); // Import Transaction model
 
 // 1. Create a new payment request
 exports.createRequest = async (req, res) => {
@@ -19,27 +18,22 @@ exports.createRequest = async (req, res) => {
       return res.status(400).json({
         status: "fail",
         message: "Amount and recipient are required and must be valid.",
-        timestamp: new Date().toISOString(),
       });
     }
 
-    // Map username to MongoDB ObjectId
     const recipientId = await getIdFromUsername(recipient);
 
     if (!recipientId) {
       return res.status(404).json({
         status: "fail",
         message: "Recipient user not found.",
-        timestamp: new Date().toISOString(),
       });
     }
 
-    // Prevent self-request
     if (recipientId.toString() === req.user.id.toString()) {
       return res.status(400).json({
         status: "fail",
         message: "You cannot send a payment request to yourself.",
-        timestamp: new Date().toISOString(),
       });
     }
 
@@ -54,40 +48,36 @@ exports.createRequest = async (req, res) => {
 
     await newRequest.save();
 
-    // Add a notification for the recipient
-    const recipientUser = await User.findById(recipientId);
-    recipientUser.notifications.push({
+    // Create a notification for the recipient
+    await Notification.create({
+      userId: recipientId,
       message: `You have received a payment request of ₹${amount} from ${req.user.username}${note ? ` with note: "${note}"` : ""}.`,
       type: "request_sent",
-      transactionId: newRequest._id, // Include the transaction ID
+      transactionId: newRequest._id,
       seen: false,
     });
-    await recipientUser.save();
 
-    // Respond with success
+    // Respond with success, including the date and status
     res.status(201).json({
       status: "success",
       message: `Payment request of ₹${amount} sent to '${recipient}'.`,
       data: {
-        transactionId: newRequest._id, // Include the transaction ID in the response
+        transactionId: newRequest._id,
         amount,
         note,
         recipient,
+        date: newRequest.createdAt, // Include the date in the response
+        status: newRequest.status, // Include the status in the response
       },
-      timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    console.error(err);
     res.status(500).json({
       status: "error",
       message: "Failed to create payment request.",
       error: err.message,
-      timestamp: new Date().toISOString(),
     });
   }
 };
-  
-  
 
 // 2. Accept a payment request and convert it to a transaction
 exports.acceptRequest = async (req, res) => {
@@ -98,7 +88,6 @@ exports.acceptRequest = async (req, res) => {
       return res.status(404).json({
         status: "fail",
         message: "Payment request not found or unauthorized.",
-        timestamp: new Date().toISOString(),
       });
     }
 
@@ -106,25 +95,22 @@ exports.acceptRequest = async (req, res) => {
       return res.status(400).json({
         status: "fail",
         message: `Request already ${request.status}.`,
-        timestamp: new Date().toISOString(),
       });
     }
 
     const requesterUser = await User.findById(request.requester);
     const recipientUser = await User.findById(req.user.id);
 
-    // Check if the recipient has enough balance
-    if (recipientUser.balance < request.amount) {
+    if (recipientUser.finalBalance < request.amount) {
       return res.status(400).json({
         status: "fail",
         message: "Insufficient balance to accept the payment request.",
-        timestamp: new Date().toISOString(),
       });
     }
 
-    // Update balances
-    recipientUser.balance -= request.amount; // Debit from recipient
-    requesterUser.balance += request.amount; // Credit to requester
+    // Deduct balance from recipient and add to requester
+    recipientUser.finalBalance -= request.amount;
+    requesterUser.finalBalance += request.amount;
 
     await recipientUser.save();
     await requesterUser.save();
@@ -132,15 +118,6 @@ exports.acceptRequest = async (req, res) => {
     // Update request status
     request.status = "accepted";
     await request.save();
-
-    // Add notification for requester
-    requesterUser.notifications.push({
-      message: `${recipientUser.username} accepted your payment request of ₹${request.amount}.`,
-      type: "request_accepted",
-      transactionId: request._id,
-      seen: false,
-    });
-    await requesterUser.save();
 
     // Add debit transaction for recipient
     const debitTransaction = new Transaction({
@@ -168,6 +145,15 @@ exports.acceptRequest = async (req, res) => {
     });
     await creditTransaction.save();
 
+    // Create a notification for the requester
+    await Notification.create({
+      userId: requesterUser._id,
+      message: `${recipientUser.username} accepted your payment request of ₹${request.amount}.`,
+      type: "request_accepted",
+      transactionId: request._id,
+      seen: false,
+    });
+
     res.status(200).json({
       status: "success",
       message: "Payment request accepted.",
@@ -177,20 +163,17 @@ exports.acceptRequest = async (req, res) => {
           debitTransaction,
           creditTransaction,
         },
+        recipientBalance: recipientUser.finalBalance,
       },
-      timestamp: new Date().toISOString(),
     });
   } catch (err) {
     res.status(500).json({
       status: "error",
       message: "Failed to accept request.",
       error: err.message,
-      timestamp: new Date().toISOString(),
     });
   }
 };
-  
-  
 
 // 3. Reject a payment request
 exports.rejectRequest = async (req, res) => {
@@ -201,7 +184,6 @@ exports.rejectRequest = async (req, res) => {
       return res.status(404).json({
         status: "fail",
         message: "Payment request not found or unauthorized.",
-        timestamp: new Date().toISOString(),
       });
     }
 
@@ -209,51 +191,34 @@ exports.rejectRequest = async (req, res) => {
       return res.status(400).json({
         status: "fail",
         message: `Request already ${request.status}.`,
-        timestamp: new Date().toISOString(),
       });
     }
 
     const requesterUser = await User.findById(request.requester);
     const recipientUser = await User.findById(req.user.id);
 
-    // Update request status
     request.status = "rejected";
     await request.save();
 
-    // Add notification for requester
-    requesterUser.notifications.push({
+    // Create a notification for the requester
+    await Notification.create({
+      userId: requesterUser._id,
       message: `${recipientUser.username} rejected your payment request of ₹${request.amount}.`,
       type: "request_rejected",
       transactionId: request._id,
       seen: false,
     });
-    await requesterUser.save();
-
-    // Add transaction for rejection
-    const transaction = new Transaction({
-      userId: req.user.id, // Add userId for the recipient
-      sender: requesterUser.username,
-      receiver: recipientUser.username,
-      amount: request.amount,
-      type: "rejected", // Ensure this matches the enum in the model
-      status: "rejected",
-      note: request.note,
-      date: new Date(),
-    });
-    await transaction.save();
 
     res.status(200).json({
       status: "success",
       message: "Payment request rejected.",
       data: request,
-      timestamp: new Date().toISOString(),
     });
   } catch (err) {
     res.status(500).json({
       status: "error",
       message: "Failed to reject request.",
       error: err.message,
-      timestamp: new Date().toISOString(),
     });
   }
 };
@@ -261,38 +226,39 @@ exports.rejectRequest = async (req, res) => {
 // 4. Get all payment requests sent/received by current user
 exports.getMyRequests = async (req, res) => {
   try {
-    // Fetch only pending payment requests where the user is the recipient
     const pendingRequests = await PaymentRequest.find({
       recipient: req.user.id,
       status: "pending",
     })
       .sort({ createdAt: -1 })
-      .select("_id requester recipient amount note status createdAt");
+      .populate("requester", "username"); // Include requester's username
 
-    // Count pending requests dynamically
-    const pendingRequestsCount = pendingRequests.length;
+    const pendingCount = pendingRequests.length;
+
+    // Format the response to include paymentRequestId, date, and other details
+    const formattedRequests = pendingRequests.map((request) => ({
+      paymentRequestId: request._id, // Include the payment request ID
+      amount: request.amount,
+      note: request.note,
+      requester: request.requester.username, // Include the requester's username
+      createdAt: request.createdAt, // Include the date
+    }));
 
     res.status(200).json({
       status: "success",
       message: "Pending payment requests fetched successfully.",
       data: {
-        pendingRequests: pendingRequests.map((request) => ({
-          transactionId: request._id, // Include transaction ID
-          requester: request.requester,
-          recipient: request.recipient,
-          amount: request.amount,
-          note: request.note,
-          status: request.status,
-          createdAt: request.createdAt,
-        })),
-        pendingRequestsCount, // Count of pending requests
+        requests: formattedRequests, // Only pending requests
+        pendingCount: pendingCount, // Total count of pending requests
       },
+      timestamp: new Date().toISOString(),
     });
   } catch (err) {
     res.status(500).json({
       status: "error",
       message: "Failed to fetch pending payment requests.",
       error: err.message,
+      timestamp: new Date().toISOString(),
     });
   }
 };
