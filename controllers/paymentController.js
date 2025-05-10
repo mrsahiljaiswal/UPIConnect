@@ -1,8 +1,10 @@
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
+const PaymentRequest = require("../models/Request"); // Import PaymentRequest model
 const calculateBalance = require("../utils/calculateBalance");
 const { getUsernameFromId, getIdFromUsername } = require("../utils/userMaps");
 const Notification = require('../models/Notification')
+
 exports.initiatePayment = async (req, res) => {
   try {
     const { amount, note, payee } = req.body;
@@ -11,7 +13,8 @@ exports.initiatePayment = async (req, res) => {
       return res.status(400).json({ status: "fail", message: "Invalid amount." });
     }
 
-    const payeeId = getIdFromUsername(payee);
+    const payeeId = await getIdFromUsername(payee);
+
     if (!payeeId) {
       return res.status(404).json({ status: "fail", message: `User '${payee}' not found.` });
     }
@@ -20,43 +23,61 @@ exports.initiatePayment = async (req, res) => {
       return res.status(400).json({ status: "fail", message: "Cannot pay yourself." });
     }
 
-    const { finalBalance } = await calculateBalance(req.user.id);
-    if (finalBalance < amount) {
+    const sender = await User.findById(req.user.id);
+    const receiver = await User.findById(payeeId);
+
+    if (!sender || !receiver) {
+      return res.status(404).json({ status: "fail", message: "Sender or receiver not found." });
+    }
+
+    if (sender.finalBalance < amount) {
       return res.status(400).json({
         status: "fail",
         message: "Insufficient balance.",
-        currentBalance: finalBalance,
       });
     }
 
-    const senderUsername = req.user.username;
-    const receiverUsername = payee;
-
-    // Save both transactions
+    // Create debit and credit transactions
     const debitTxn = new Transaction({
-      userId: req.user.id,
-      type: "debit",
+      userId: sender._id,
+      type: "debited",
       amount,
       note,
-      sender: senderUsername,
-      receiver: receiverUsername,
+      sender: sender.username,
+      receiver: receiver.username,
+      status: "completed",
       date: new Date(),
     });
 
     const creditTxn = new Transaction({
-      userId: payeeId,
-      type: "credit",
+      userId: receiver._id,
+      type: "credited",
       amount,
-      note: `Received from ${senderUsername}`,
-      sender: senderUsername,
-      receiver: receiverUsername,
+      note: `${note}`, // Include the original note
+      sender: sender.username,
+      receiver: receiver.username,
+      status: "completed",
       date: new Date(),
     });
 
     await debitTxn.save();
     await creditTxn.save();
 
-    const { finalBalance: newBalance } = await calculateBalance(req.user.id);
+    // Update balances in the database
+    sender.finalBalance -= amount;
+    receiver.finalBalance += amount;
+
+    await sender.save();
+    await receiver.save();
+
+    // Create a notification for the receiver
+    await Notification.create({
+      userId: receiver._id,
+      message: `You have received ₹${amount} from ${sender.username}.`,
+      type: "payment_received",
+      transactionId: creditTxn._id,
+      seen: false,
+    });
 
     res.status(201).json({
       status: "success",
@@ -64,9 +85,9 @@ exports.initiatePayment = async (req, res) => {
       data: {
         transactionId: debitTxn._id,
         amount,
-        note,
+        note, // Include the original note in the response
         payee,
-        balanceAfterTransaction: newBalance,
+        balanceAfterTransaction: sender.finalBalance,
         transactionDate: debitTxn.date,
       },
       timestamp: new Date().toISOString(),
@@ -86,22 +107,27 @@ exports.getLastTransactions = async (req, res) => {
       transactionId: txn._id,
       amount: txn.amount,
       type: txn.type,
-      note: txn.note,
+      note: txn.note, // Include the original note
       status: "Success",
       sender: txn.sender,
       receiver: txn.receiver,
       transactionDate: txn.date,
     }));
 
-    res.status(200).json(formatted);
+    res.status(200).json({
+      status: "success",
+      message: "Transaction history fetched successfully.",
+      data: formatted,
+    });
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch transactions" });
+    res.status(500).json({ status: "error", message: "Failed to fetch transactions.", error: err.message });
   }
 };
 
 exports.checkBalance = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("username email");
+    // Fetch the user details
+    const user = await User.findOne({ username: req.user.username }).select("username email finalBalance");
 
     if (!user) {
       return res.status(404).json({
@@ -111,24 +137,22 @@ exports.checkBalance = async (req, res) => {
       });
     }
 
-    const { finalBalance } = await calculateBalance(req.user.id);
-
     res.status(200).json({
       status: "success",
-      message: "Current user details fetched.",
+      message: "Balance fetched successfully.",
       data: {
-        userId: req.user.id,
         username: user.username,
         email: user.email,
-        balance: finalBalance,
+        finalBalance: user.finalBalance, // Ensure this field is included in the response
       },
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
     res.status(500).json({
       status: "error",
-      message: "Failed to fetch user details.",
+      message: "Failed to fetch balance.",
       error: err.message,
+      timestamp: new Date().toISOString(),
     });
   }
 };
