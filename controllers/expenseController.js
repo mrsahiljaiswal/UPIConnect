@@ -1,6 +1,4 @@
 const Expense = require("../models/Expense");
-const PaymentRequest = require("../models/Request");
-const Transaction = require("../models/Transaction");
 
 exports.addOrUpdateExpense = async (req, res) => {
   try {
@@ -68,35 +66,6 @@ exports.getExpenses = async (req, res) => {
     res.status(500).json({
       status: "error",
       message: "Failed to retrieve expenses.",
-      error: err.message,
-    });
-  }
-};
-
-exports.getTransactionHistory = async (req, res) => {
-  try {
-    // Fetch all transactions for the user
-    const transactions = await Transaction.find({
-      $or: [{ sender: req.user.username }, { receiver: req.user.username }],
-    }).sort({ date: -1 });
-
-    // Fetch all payment requests for the user
-    const paymentRequests = await PaymentRequest.find({
-      $or: [{ requester: req.user.id }, { recipient: req.user.id }],
-    }).sort({ createdAt: -1 });
-
-    res.status(200).json({
-      status: "success",
-      message: "Transaction history retrieved successfully.",
-      data: {
-        transactions,
-        paymentRequests,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: "error",
-      message: "Failed to retrieve transaction history.",
       error: err.message,
     });
   }
