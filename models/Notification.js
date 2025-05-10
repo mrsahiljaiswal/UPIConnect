@@ -16,13 +16,13 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["payment_received", "request_sent", "request_accepted", "payment_failed"],
+    enum: ["payment_received", "request_sent", "request_accepted", "payment_rejected"],
     required: true,
   },
   transactionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Transaction", // Reference to the Transaction model
-    required: false, // Optional to maintain compatibility with existing notifications
+    required: false,
   },
   createdAt: {
     type: Date,
