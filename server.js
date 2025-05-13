@@ -1,3 +1,4 @@
+const finlearnRoutes = require("./routes/finlearnRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 require("dotenv").config();
 const express = require("express");
@@ -20,7 +21,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-
 // Middleware
 app.use(express.json());
 
@@ -29,11 +29,11 @@ connectDB();
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/finlearn", finlearnRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api", paymentRoutes);
 app.use("/api/expenses", expenseRoutes);
-
 // Start Server
 app.listen(PORT, async () => {
   try {
