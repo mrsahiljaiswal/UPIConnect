@@ -15,18 +15,16 @@ const billSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  category: {
-    type: String,
-    enum: ['food', 'entertainment', 'shopping', 'utility', 'travel', 'other'],
-    default: 'other'
-  },
   participants: [
     {
-      userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+      username: {
+        type: String,
+        required: true
       },
-      share: Number,
+      share: {
+        type: Number,
+        required: true
+      },
       hasPaid: {
         type: Boolean,
         default: false
@@ -38,27 +36,11 @@ const billSchema = new mongoose.Schema({
       paidAt: Date
     }
   ],
-  splitMethod: {
-    type: String,
-    enum: ['equal', 'custom', 'itemwise'],
-    default: 'equal'
-  },
-  items: [
-    {
-      name: String,
-      amount: Number,
-      assignedTo: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-      }]
-    }
-  ],
   status: {
     type: String,
     enum: ['active', 'settled', 'cancelled'],
     default: 'active'
   },
-  settledAt: Date,
   createdAt: {
     type: Date,
     default: Date.now
